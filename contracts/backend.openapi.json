@@ -215,6 +215,63 @@
         "title": "Evidence",
         "type": "object"
       },
+      "FinanceReport": {
+        "properties": {
+          "as_of_date": {
+            "format": "date",
+            "title": "As Of Date",
+            "type": "string"
+          },
+          "currency": {
+            "const": "SGD",
+            "default": "SGD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "report_type": {
+            "enum": [
+              "profitability",
+              "operating_expenses",
+              "cash_flow",
+              "receivables"
+            ],
+            "title": "Report Type",
+            "type": "string"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report_type",
+          "start_date",
+          "as_of_date",
+          "summary",
+          "evidence"
+        ],
+        "title": "FinanceReport",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -634,6 +691,87 @@
           }
         ],
         "summary": "Business Health",
+        "tags": [
+          "bizzybee"
+        ]
+      }
+    },
+    "/api/v1/finance/report": {
+      "get": {
+        "operationId": "finance_report_api_v1_finance_report_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "report_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "profitability",
+                "operating_expenses",
+                "cash_flow",
+                "receivables"
+              ],
+              "title": "Report Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of_date",
+            "required": false,
+            "schema": {
+              "default": "2026-09-23",
+              "format": "date",
+              "title": "As Of Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Finance Report",
         "tags": [
           "bizzybee"
         ]
