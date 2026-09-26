@@ -1,10 +1,12 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
+import './dashboard.css'
 import { apiRoutes, fetchAuditEvent, queryBusiness } from './api/client'
 import { AlertsPanel } from './components/AlertsPanel'
 import { ApprovalControls } from './components/ApprovalControls'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
+import { HivePanel } from './components/HivePanel'
 import { type LoadState, useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
 import type {
   AgentResponse,
@@ -17,14 +19,6 @@ import type {
 import { formatEvidenceValue, humaniseKey } from './utils/evidence'
 import { formatPct, plural } from './utils/format'
 import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
-
-type HiveState = 'Active' | 'Idle'
-
-interface HiveAgent {
-  name: string
-  state: HiveState
-  note: string
-}
 
 interface EvidenceItem {
   label: string
@@ -106,6 +100,8 @@ export default function App() {
 
     setLoading(true)
     setError(null)
+    setQueryResult(null)
+    setAuditRecord(null)
     setLastSubmitted(question.trim())
 
     try {
@@ -121,30 +117,6 @@ export default function App() {
       setLoading(false)
     }
   }
-
-  // Map Backend Response -> UI Displays
-  const activeAgentsList = useMemo<HiveAgent[]>(() => {
-    if (!queryResult) {
-      return [
-        { name: 'Queen Bee', state: 'Idle', note: 'Awaiting user query' },
-        { name: 'Sales Bee', state: 'Idle', note: 'Ready' },
-        { name: 'Customer Bee', state: 'Idle', note: 'Ready' },
-        { name: 'Finance Bee', state: 'Idle', note: 'Ready' },
-        { name: 'Inventory Bee', state: 'Idle', note: 'Ready' },
-        { name: 'Advisor Bee', state: 'Idle', note: 'Awaiting specialist evidence' },
-      ]
-    }
-
-    const invoked = queryResult.invoked_agents || []
-    return [
-      { name: 'Queen Bee', state: 'Active', note: `Routed to: ${invoked.join(', ')}` },
-      { name: 'Sales Bee', state: invoked.includes('sales') ? 'Active' : 'Idle', note: invoked.includes('sales') ? 'Analyzing sales trends' : 'Not invoked' },
-      { name: 'Customer Bee', state: invoked.includes('customer') ? 'Active' : 'Idle', note: invoked.includes('customer') ? 'Analyzing customer complaints & SLA' : 'Not invoked' },
-      { name: 'Finance Bee', state: invoked.includes('finance') ? 'Active' : 'Idle', note: invoked.includes('finance') ? 'Checking invoices & cash flow' : 'Not invoked' },
-      { name: 'Inventory Bee', state: invoked.includes('inventory') ? 'Active' : 'Idle', note: invoked.includes('inventory') ? 'Evaluating stock risk' : 'Not invoked' },
-      { name: 'Advisor Bee', state: 'Active', note: queryResult.advisor_result ? queryResult.advisor_result.summary : 'Synthesizing evidence' },
-    ]
-  }, [queryResult])
 
   const evidenceList = useMemo<EvidenceItem[]>(() => {
     if (!queryResult) return []
@@ -200,20 +172,33 @@ export default function App() {
     if (!queryResult) return []
     if (currentAudit?.status === 'ready') return auditLines(currentAudit.data)
     return [
-      `Workflow ${queryResult.workflow_id} executed`,
+      `Query response received for workflow ${queryResult.workflow_id}; audit confirmation pending`,
       `Queen Bee routed to agents: ${queryResult.invoked_agents.join(', ')}`,
       `Guard decision evaluated as: ${queryResult.guard_decision}`,
-      queryResult.approval_required ? 'Approval required for AMBER/RED actions' : 'No approval needed (GREEN actions)',
+      queryResult.guard_decision === 'blocked' ? 'Blocked actions cannot be approved' : queryResult.approval_required ? 'Approval required for AMBER actions' : 'No approval required; no business action executed',
     ]
   }, [queryResult, currentAudit])
 
   return (
-    <main className="app-shell">
+    <div className="dashboard-shell">
+    <aside className="dashboard-sidebar">
+      <a href="#overview" className="dashboard-brand"><span aria-hidden="true">🐝</span> BizzyBee <small>AI BUSINESS DESK</small></a>
+      <nav aria-label="Dashboard sections">
+        <a href="#overview">Overview</a><a href="#analytics">Business monitoring</a><a href="#ask">Ask Bizzy</a><a href="#hive">Agent hive</a><a href="#governance">Governance</a><a href="#audit">Current workflow</a>
+      </nav>
+      <p className="hint">Synthetic data<br />Reporting date: 2026-09-23</p>
+    </aside>
+    <main className="app-shell dashboard-main" id="overview">
       <header className="hero">
-        <p className="eyebrow">BizzyBee AI</p>
-        <h1>Your Business Speaks Your Language.</h1>
-        <p className="subline">From scattered data to clear decisions.</p>
+        <div><p className="eyebrow">WORKSPACE / OVERVIEW</p>
+        <h1>Your business, in the clear.</h1>
+        <p className="subline">Evidence first. Decisions under your control.</p></div>
+        <button type="button" className="secondary" onClick={reload}>Refresh monitoring</button>
       </header>
+      <section className="welcome-band" aria-label="Welcome">
+        <div><p className="eyebrow">YOUR EIGHT-BEE TEAM</p><h2>Small signals.<br /><span>Smarter moves.</span></h2><p>Explore sales, finance, inventory and customer evidence in one workspace.</p><a href="#ask">Ask your hive →</a></div>
+        <div className="honeycomb-art" aria-hidden="true">⬡<span>🐝</span>⬡</div>
+      </section>
 
       <section className="panel metrics" aria-label="Business health overview">
         {dashboardMetrics.map((metric) => (
@@ -226,12 +211,13 @@ export default function App() {
 
       <AlertsPanel state={alerts} onRetry={reload} />
 
-      <section className="panel two-col" aria-label="Sales and inventory monitoring">
+      <section className="panel two-col" id="analytics" aria-label="Sales and inventory monitoring">
         <SalesPanel state={sales} onRetry={reload} />
         <InventoryPanel state={inventory} onRetry={reload} />
       </section>
 
-      <section className="panel">
+      <section className="panel" id="ask">
+        <p className="eyebrow">QUESTION → EVIDENCE → RECOMMENDATION</p>
         <h2>Ask BizzyBee</h2>
         <form className="query-form" onSubmit={submitQuery}>
           <label>
@@ -251,6 +237,7 @@ export default function App() {
             Business question
             <textarea
               rows={3}
+              maxLength={4000}
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
             />
@@ -259,34 +246,24 @@ export default function App() {
             {loading ? 'Analyzing Data...' : 'Run Query'}
           </button>
         </form>
+        <div className="quick-questions" aria-label="Example questions">{['Why did sales fall this week?', 'Why did customer complaints increase?', 'Recommend inventory reorders.'].map((example) => <button type="button" className="secondary" key={example} disabled={loading} onClick={() => setQuestion(example)}>{example}</button>)}</div>
         <p className="hint">{languageHint}</p>
         <p className="contract-note">Main query endpoint: {apiRoutes.query}</p>
         {lastSubmitted ? (
           <p className="submitted">Submitted: “{lastSubmitted}”</p>
         ) : null}
-        {error && <p className="error" style={{ color: 'red' }}>Error: {error}</p>}
+        {error && <p className="error" role="alert">Error: {error}</p>}
       </section>
+      <HivePanel result={queryResult} loading={loading} error={error} audit={currentAudit?.status === 'ready' ? currentAudit.data : null} auditStatus={currentAudit?.status} />
 
-      <section className="panel two-col">
-        <article>
-          <h2>Hive Activity</h2>
-          <ul className="list">
-            {activeAgentsList.map((agent) => (
-              <li key={agent.name}>
-                <span className={`badge ${agent.state.toLowerCase()}`}>{agent.state}</span>
-                <strong>{agent.name}</strong>
-                <p>{agent.note}</p>
-              </li>
-            ))}
-          </ul>
-        </article>
+      <section className="panel">
 
         <article>
           <h2>Evidence</h2>
           {evidenceList.length === 0 ? (
-            <p style={{ padding: '1rem', color: '#666' }}>Run a query to fetch real-time SQL evidence from dataset.</p>
+            <p>Run a query to inspect deterministic evidence from the versioned synthetic dataset.</p>
           ) : (
-            <ul className="list">
+            <ul className="list evidence-list" aria-label="Query evidence">
               {evidenceList.map((item, idx) => (
                 <li key={idx}>
                   <strong>{item.label}</strong>
@@ -316,8 +293,9 @@ export default function App() {
           )}
         </article>
 
-        <article>
-          <h2>Audit Timeline</h2>
+        <article id="audit">
+          <h2>Current workflow audit</h2>
+          <p className="hint">Only the current workflow is shown. Full audit-history browsing is not available in this release.</p>
           {auditTimeline.length === 0 ? (
             <p style={{ padding: '1rem', color: '#666' }}>Workflow events will appear here after query execution.</p>
           ) : (
@@ -328,17 +306,17 @@ export default function App() {
             </ul>
           )}
           {currentAudit?.status === 'error' ? (
-            <p className="hint">The stored audit record couldn't be loaded, so this is the workflow summary instead.</p>
+            <div role="alert"><p>The stored audit record couldn't be loaded; this is only the query response summary.</p><button type="button" onClick={() => queryResult && loadAuditRecord(queryResult.workflow_id)}>Retry audit</button></div>
           ) : null}
         </article>
       </section>
 
-      <section className="panel approval-actions">
+      <section className="panel approval-actions" id="governance">
         <h2>Approval Gate</h2>
         <p>AMBER actions require authorised human approval before commitment.</p>
         {!queryResult ? (
           <p>Run a query to evaluate whether a proposed action requires approval.</p>
-        ) : queryResult.approval_required ? (
+        ) : queryResult.guard_decision === 'blocked' ? <p>Blocked by policy. These actions cannot be approved or executed.</p> : queryResult.approval_required ? (
           <p>
             The Guard has paused this recommendation for authorised human review. This build records the draft only;
             no business action has been committed.
@@ -348,6 +326,8 @@ export default function App() {
         )}
         {currentAudit?.status === 'ready' && <ApprovalControls key={currentAudit.data.workflow_id} event={currentAudit.data} reload={() => loadAuditRecord(currentAudit.data.workflow_id)} />}
       </section>
+      <footer className="hint">Synthetic business data · Authenticated access · Approval records decisions only; no payments, messages or purchases are executed.</footer>
     </main>
+    </div>
   )
 }
