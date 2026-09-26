@@ -23,6 +23,10 @@ export function asString(value: JsonValue | undefined): string | null {
   return typeof value === 'string' && value !== '' ? value : null
 }
 
+export function asBoolean(value: JsonValue | undefined): boolean {
+  return value === true
+}
+
 export function numberMetric(index: EvidenceIndex, metric: string): number | null {
   return asNumber(index.get(metric)?.value)
 }

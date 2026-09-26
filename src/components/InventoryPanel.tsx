@@ -24,10 +24,13 @@ const RISK_TONE: Record<StockRisk, 'red' | 'amber' | 'green'> = {
 
 function nextDelivery(focus: FocusStock, asOfDate: string | null): string {
   if (!focus.nextReceiptDate) return 'Not scheduled'
-  const when = formatDate(focus.nextReceiptDate)
-  if (!asOfDate) return when
-  const days = daysBetween(asOfDate, focus.nextReceiptDate)
-  return days > 0 ? `${when} (in ${plural(days, 'day')})` : when
+  const days = asOfDate ? daysBetween(asOfDate, focus.nextReceiptDate) : 0
+  const when = days > 0 ? `${formatDate(focus.nextReceiptDate)} (in ${plural(days, 'day')})` : formatDate(focus.nextReceiptDate)
+  return focus.incomingQtyStatus === 'unknown' ? `${when}, quantity not confirmed` : when
+}
+
+function orderQuantity(quantity: number, provisional: boolean): string {
+  return provisional ? `~${plural(quantity, 'unit')} (provisional)` : plural(quantity, 'unit')
 }
 
 function FocusProduct({ focus, view }: { focus: FocusStock; view: InventoryView }) {
@@ -52,7 +55,10 @@ function FocusProduct({ focus, view }: { focus: FocusStock; view: InventoryView 
     facts.push({ label: 'Further lost sales before restock', value: formatSgd(focus.lostRevenueUntilRestock) })
   }
   if (focus.suggestedOrderQty) {
-    facts.push({ label: 'Suggested order', value: plural(focus.suggestedOrderQty, 'unit') })
+    facts.push({
+      label: 'Suggested order',
+      value: orderQuantity(focus.suggestedOrderQty, focus.suggestedOrderQtyIsProvisional),
+    })
   }
   if (focus.supplier) {
     const leadTime = focus.leadTimeDays === null ? '' : ` · ${formatNumber(focus.leadTimeDays)}-day lead time`
@@ -74,6 +80,12 @@ function FocusProduct({ focus, view }: { focus: FocusStock; view: InventoryView 
           </div>
         ))}
       </dl>
+      {focus.suggestedOrderQtyIsProvisional ? (
+        <p className="bee-note bee-focus-note">
+          The quantity of the incoming delivery isn't known yet, so the order size is an estimate. Confirm the inbound
+          quantity with the supplier before drafting a purchase order.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -85,7 +97,9 @@ function describeCover(row: StockRow): string {
     parts.push(`${formatNumber(row.daysOfCover)} days of cover${leadTime}`)
   }
   if (row.projectedStockoutDate) parts.push(`runs out ${formatDate(row.projectedStockoutDate)}`)
-  if (row.suggestedOrderQty) parts.push(`order ${plural(row.suggestedOrderQty, 'unit')}`)
+  if (row.suggestedOrderQty) {
+    parts.push(`order ${orderQuantity(row.suggestedOrderQty, row.suggestedOrderQtyIsProvisional)}`)
+  }
   return parts.join(' · ')
 }
 
@@ -142,6 +156,9 @@ function InventoryDetails({ view }: { view: InventoryView }) {
         <p className="bee-note">
           {plural(view.reorderCandidateCount, 'product')} to reorder
           {view.totalSuggestedOrderUnits ? ` · ${plural(view.totalSuggestedOrderUnits, 'unit')} suggested in total` : ''}
+          {view.provisionalReorderCount
+            ? ` · ${formatNumber(view.provisionalReorderCount)} provisional until inbound quantities are confirmed`
+            : ''}
         </p>
       ) : null}
 

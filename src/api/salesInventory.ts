@@ -8,13 +8,26 @@ import type {
   StockRisk,
   StockRow,
 } from '../types/salesInventory'
-import { asNumber, asString, indexEvidence, numberMetric, recordsMetric, stringMetric } from '../utils/evidence'
+import {
+  asBoolean,
+  asNumber,
+  asString,
+  indexEvidence,
+  numberMetric,
+  recordsMetric,
+  stringMetric,
+} from '../utils/evidence'
 import { parsePeriod } from '../utils/format'
 import { apiRoutes, requestJson } from './client'
 
 const STOCK_RISKS: readonly StockRisk[] = ['out_of_stock', 'at_risk', 'ok']
 
 const RISK_RANK: Record<StockRisk, number> = { out_of_stock: 0, at_risk: 1, ok: 2 }
+
+interface OrderSuggestion {
+  quantity: number
+  provisional: boolean
+}
 
 async function fetchBee(url: string, label: string, signal?: AbortSignal): Promise<AgentResponse> {
   const response = await requestJson<AgentResponse>(url, label, { signal })
@@ -101,10 +114,11 @@ function toStockRisk(value: JsonValue | undefined): StockRisk {
   return STOCK_RISKS.find((risk) => risk === value) ?? 'at_risk'
 }
 
-function toStockRow(record: JsonRecord, orderQuantities: ReadonlyMap<string, number>): StockRow | null {
+function toStockRow(record: JsonRecord, orders: ReadonlyMap<string, OrderSuggestion>): StockRow | null {
   const productId = asString(record.product_id)
   const currentStock = asNumber(record.current_stock)
   if (!productId || currentStock === null) return null
+  const order = orders.get(productId)
   return {
     productId,
     product: asString(record.product) ?? productId,
@@ -115,7 +129,8 @@ function toStockRow(record: JsonRecord, orderQuantities: ReadonlyMap<string, num
     daysOfCover: asNumber(record.days_of_cover),
     leadTimeDays: asNumber(record.lead_time_days),
     projectedStockoutDate: asString(record.projected_stockout_date),
-    suggestedOrderQty: orderQuantities.get(productId) ?? null,
+    suggestedOrderQty: order?.quantity ?? null,
+    suggestedOrderQtyIsProvisional: order?.provisional ?? false,
   }
 }
 
@@ -131,15 +146,17 @@ function mostUrgentFirst(a: StockRow, b: StockRow): number {
 export function toInventoryView(response: AgentResponse): InventoryView {
   const evidence = indexEvidence(response.evidence)
 
-  const orderQuantities = new Map<string, number>()
+  const orders = new Map<string, OrderSuggestion>()
   for (const record of recordsMetric(evidence, 'reorder_recommendation_details')) {
     const productId = asString(record.product_id)
     const quantity = asNumber(record.suggested_order_qty)
-    if (productId && quantity !== null) orderQuantities.set(productId, quantity)
+    if (productId && quantity !== null) {
+      orders.set(productId, { quantity, provisional: asBoolean(record.suggested_order_qty_is_provisional) })
+    }
   }
 
   const rows = recordsMetric(evidence, 'stock_risk_details')
-    .map((record) => toStockRow(record, orderQuantities))
+    .map((record) => toStockRow(record, orders))
     .filter(isPresent)
 
   const riskCounts: Record<StockRisk, number> = { out_of_stock: 0, at_risk: 0, ok: 0 }
@@ -151,6 +168,7 @@ export function toInventoryView(response: AgentResponse): InventoryView {
   }
 
   const focusId = stringMetric(evidence, 'product_id')
+  const focusOrder = focusId ? orders.get(focusId) : undefined
   const focus: FocusStock | null = focusId
     ? {
         productId: focusId,
@@ -165,8 +183,11 @@ export function toInventoryView(response: AgentResponse): InventoryView {
         unfulfilledUnits: numberMetric(evidence, 'recent_unfulfilled_demand_units'),
         lostRevenue: numberMetric(evidence, 'recent_lost_revenue_sgd'),
         nextReceiptDate: stringMetric(evidence, 'next_expected_receipt_date'),
+        incomingQtyStatus: stringMetric(evidence, 'incoming_qty_status'),
         lostRevenueUntilRestock: numberMetric(evidence, 'projected_lost_revenue_sgd_until_restock'),
-        suggestedOrderQty: numberMetric(evidence, 'suggested_order_qty') ?? orderQuantities.get(focusId) ?? null,
+        suggestedOrderQty: numberMetric(evidence, 'suggested_order_qty') ?? focusOrder?.quantity ?? null,
+        suggestedOrderQtyIsProvisional:
+          asBoolean(evidence.get('suggested_order_qty_is_provisional')?.value) || (focusOrder?.provisional ?? false),
       }
     : null
 
@@ -178,6 +199,7 @@ export function toInventoryView(response: AgentResponse): InventoryView {
     riskCounts,
     totalStockValue: numberMetric(evidence, 'total_stock_value_sgd'),
     reorderCandidateCount: numberMetric(evidence, 'reorder_candidate_count'),
+    provisionalReorderCount: numberMetric(evidence, 'provisional_reorder_candidate_count'),
     totalSuggestedOrderUnits: numberMetric(evidence, 'total_suggested_order_units'),
     focus,
     watchList: rows.filter((row) => row.risk !== 'ok' && row.productId !== focusId).sort(mostUrgentFirst),

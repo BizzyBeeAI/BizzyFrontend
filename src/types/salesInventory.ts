@@ -58,6 +58,7 @@ export interface StockRow {
   leadTimeDays: number | null
   projectedStockoutDate: string | null
   suggestedOrderQty: number | null
+  suggestedOrderQtyIsProvisional: boolean
 }
 
 export interface FocusStock {
@@ -73,8 +74,10 @@ export interface FocusStock {
   unfulfilledUnits: number | null
   lostRevenue: number | null
   nextReceiptDate: string | null
+  incomingQtyStatus: string | null
   lostRevenueUntilRestock: number | null
   suggestedOrderQty: number | null
+  suggestedOrderQtyIsProvisional: boolean
 }
 
 export interface InventoryView extends BeeView {
@@ -84,6 +87,7 @@ export interface InventoryView extends BeeView {
   riskCounts: Record<StockRisk, number>
   totalStockValue: number | null
   reorderCandidateCount: number | null
+  provisionalReorderCount: number | null
   totalSuggestedOrderUnits: number | null
   focus: FocusStock | null
   watchList: StockRow[]

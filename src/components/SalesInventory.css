@@ -229,6 +229,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bee-focus-note {
+  margin-top: 0.6rem;
+}
+
 .bee-rows .bee-params {
   color: #6b7280;
   font-size: 0.8rem;
