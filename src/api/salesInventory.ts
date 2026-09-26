@@ -18,6 +18,7 @@ import {
   stringMetric,
 } from '../utils/evidence'
 import { parsePeriod } from '../utils/format'
+import { DEFAULT_LANGUAGE } from '../utils/languages'
 import { apiRoutes, requestJson } from './client'
 
 const STOCK_RISKS: readonly StockRisk[] = ['out_of_stock', 'at_risk', 'ok']
@@ -27,6 +28,10 @@ const RISK_RANK: Record<StockRisk, number> = { out_of_stock: 0, at_risk: 1, ok: 
 interface OrderSuggestion {
   quantity: number
   provisional: boolean
+}
+
+function withLanguage(url: string, language: string): string {
+  return language === DEFAULT_LANGUAGE ? url : `${url}?${new URLSearchParams({ language })}`
 }
 
 async function fetchBee(url: string, label: string, signal?: AbortSignal): Promise<AgentResponse> {
@@ -206,10 +211,12 @@ export function toInventoryView(response: AgentResponse): InventoryView {
   }
 }
 
-export async function fetchSalesView(signal?: AbortSignal): Promise<SalesView> {
-  return toSalesView(await fetchBee(apiRoutes.salesSummary, 'the sales summary', signal))
+export async function fetchSalesView(language: string, signal?: AbortSignal): Promise<SalesView> {
+  const url = withLanguage(apiRoutes.salesSummary, language)
+  return toSalesView(await fetchBee(url, 'the sales summary', signal))
 }
 
-export async function fetchInventoryView(signal?: AbortSignal): Promise<InventoryView> {
-  return toInventoryView(await fetchBee(apiRoutes.inventoryStatus, 'the inventory status', signal))
+export async function fetchInventoryView(language: string, signal?: AbortSignal): Promise<InventoryView> {
+  const url = withLanguage(apiRoutes.inventoryStatus, language)
+  return toInventoryView(await fetchBee(url, 'the inventory status', signal))
 }

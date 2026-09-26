@@ -7,6 +7,7 @@ import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
 import type { AgentResponse, Evidence, QueryResponse, RecommendedAction, RiskLevel } from './types/contracts'
 import { formatEvidenceValue, humaniseKey } from './utils/evidence'
 import { formatPct } from './utils/format'
+import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
 
 type HiveState = 'Active' | 'Idle'
 
@@ -27,16 +28,14 @@ interface Recommendation {
   detail: string
 }
 
-const supportedLanguages = ['English', 'Tamil', 'Mandarin', 'Bahasa Melayu', 'Hindi']
-
 export default function App() {
-  const [selectedLanguage, setSelectedLanguage] = useState(supportedLanguages[0])
+  const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE)
   const [question, setQuestion] = useState('Why did customer complaints increase?')
   const [lastSubmitted, setLastSubmitted] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
-  const { sales, inventory, reload } = useSalesInventory()
+  const { sales, inventory, reload } = useSalesInventory(selectedLanguage)
 
   const dashboardMetrics = [
     { label: 'Business Health', value: '78/100' },
@@ -45,11 +44,13 @@ export default function App() {
     { label: 'Out of Stock', value: valueWhenReady(inventory, (view) => String(view.riskCounts.out_of_stock)) },
   ]
 
-  const languageHint = useMemo(
-    () =>
-      `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${selectedLanguage}).`,
-    [selectedLanguage],
-  )
+  const languageHint = useMemo(() => {
+    const label = languageLabel(selectedLanguage)
+    const fallback = hasLocalisedSummaries(selectedLanguage)
+      ? ''
+      : ` ${label} summaries aren't available yet, so answers are shown in English.`
+    return `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${label}).${fallback}`
+  }, [selectedLanguage])
 
   async function submitQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -186,9 +187,9 @@ export default function App() {
               value={selectedLanguage}
               onChange={(event) => setSelectedLanguage(event.target.value)}
             >
-              {supportedLanguages.map((language) => (
-                <option key={language} value={language}>
-                  {language}
+              {LANGUAGES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.label}
                 </option>
               ))}
             </select>

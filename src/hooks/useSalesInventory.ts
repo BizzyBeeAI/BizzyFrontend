@@ -15,7 +15,9 @@ function load<T>(
   signal: AbortSignal,
 ) {
   fetcher(signal)
-    .then((data) => setState({ status: 'ready', data }))
+    .then((data) => {
+      if (!signal.aborted) setState({ status: 'ready', data })
+    })
     .catch((error: unknown) => {
       if (signal.aborted) return
       setState({ status: 'error', message: error instanceof Error ? error.message : String(error) })
@@ -26,17 +28,17 @@ export function valueWhenReady<T>(state: LoadState<T>, pick: (data: T) => string
   return state.status === 'ready' ? pick(state.data) : placeholder
 }
 
-export function useSalesInventory() {
+export function useSalesInventory(language: string) {
   const [sales, setSales] = useState<LoadState<SalesView>>(LOADING)
   const [inventory, setInventory] = useState<LoadState<InventoryView>>(LOADING)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
-    load(fetchSalesView, setSales, controller.signal)
-    load(fetchInventoryView, setInventory, controller.signal)
+    load((signal) => fetchSalesView(language, signal), setSales, controller.signal)
+    load((signal) => fetchInventoryView(language, signal), setInventory, controller.signal)
     return () => controller.abort()
-  }, [attempt])
+  }, [attempt, language])
 
   const reload = useCallback(() => {
     setSales(LOADING)
