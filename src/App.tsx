@@ -1,6 +1,7 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
-import { apiRoutes } from './api/client'
+import { apiRoutes, queryBusiness } from './api/client'
+import type { QueryResponse, AgentResponse, Evidence, RecommendedAction } from './types/contracts'
 
 type HiveState = 'Active' | 'Idle'
 type RiskLevel = 'GREEN' | 'AMBER' | 'RED'
@@ -31,53 +32,13 @@ const dashboardMetrics = [
   { label: 'Stock Risk Items', value: '3' },
 ]
 
-const hiveAgents: HiveAgent[] = [
-  { name: 'Queen Bee', state: 'Active', note: 'Routing business query' },
-  { name: 'Sales Bee', state: 'Active', note: 'Checking category decline' },
-  { name: 'Inventory Bee', state: 'Active', note: 'Evaluating stock-out risk' },
-  { name: 'Finance Bee', state: 'Idle', note: 'Ready for cash-flow checks' },
-  { name: 'Customer Bee', state: 'Active', note: 'Reviewing missed opportunities' },
-  { name: 'Advisor Bee', state: 'Idle', note: 'Awaiting specialist evidence' },
-  { name: 'Guard Bee', state: 'Idle', note: 'Policy checks pending recommendation' },
-  { name: 'Audit Bee', state: 'Idle', note: 'Recording workflow events' },
-]
-
-const evidence: EvidenceItem[] = [
-  { label: 'Product A stock', value: '14 units (3-day runout risk)' },
-  { label: 'Sales decline', value: '-18% week-over-week' },
-  { label: 'Unconverted leads', value: '12 high-intent enquiries' },
-  { label: 'Overdue invoices', value: 'SGD 48,000 across 6 invoices' },
-]
-
-const recommendations: Recommendation[] = [
-  {
-    title: 'Prepare purchase order draft for Product A',
-    risk: 'AMBER',
-    detail: 'Draft only. Human approval required before supplier commitment.',
-  },
-  {
-    title: 'Send follow-up responses to top 5 warm leads',
-    risk: 'AMBER',
-    detail: 'Generate multilingual drafts for owner review.',
-  },
-  {
-    title: 'Review overdue invoices with finance team',
-    risk: 'GREEN',
-    detail: 'No external transaction is executed automatically.',
-  },
-]
-
-const auditTimeline = [
-  'Workflow bb-workflow-2026-09-23 started by owner@bizzybee',
-  'Queen Bee routed to Sales, Customer, Inventory and Finance Bees',
-  'Advisor Bee produced ranked recommendations with confidence 0.91',
-  'Guard Bee marked reorder action as AMBER (approval required)',
-]
-
-function App() {
+export default function App() {
   const [selectedLanguage, setSelectedLanguage] = useState(supportedLanguages[0])
-  const [question, setQuestion] = useState('Why did sales fall this week?')
+  const [question, setQuestion] = useState('Why did customer complaints increase?')
   const [lastSubmitted, setLastSubmitted] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
 
   const languageHint = useMemo(
     () =>
@@ -85,10 +46,108 @@ function App() {
     [selectedLanguage],
   )
 
-  function submitQuery(event: FormEvent<HTMLFormElement>) {
+  async function submitQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!question.trim()) return
+
+    setLoading(true)
+    setError(null)
     setLastSubmitted(question.trim())
+
+    try {
+      const response = await queryBusiness({
+        question: question.trim(),
+        language: selectedLanguage,
+        user: 'owner@bizzybee',
+      })
+      setQueryResult(response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to query business API')
+    } finally {
+      setLoading(false)
+    }
   }
+
+  // Map Backend Response -> UI Displays
+  const activeAgentsList = useMemo<HiveAgent[]>(() => {
+    if (!queryResult) {
+      return [
+        { name: 'Queen Bee', state: 'Idle', note: 'Awaiting user query' },
+        { name: 'Sales Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Customer Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Finance Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Inventory Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Advisor Bee', state: 'Idle', note: 'Awaiting specialist evidence' },
+      ]
+    }
+
+    const invoked = queryResult.invoked_agents || []
+    return [
+      { name: 'Queen Bee', state: 'Active', note: `Routed to: ${invoked.join(', ')}` },
+      { name: 'Sales Bee', state: invoked.includes('sales') ? 'Active' : 'Idle', note: invoked.includes('sales') ? 'Analyzing sales trends' : 'Not invoked' },
+      { name: 'Customer Bee', state: invoked.includes('customer') ? 'Active' : 'Idle', note: invoked.includes('customer') ? 'Analyzing customer complaints & SLA' : 'Not invoked' },
+      { name: 'Finance Bee', state: invoked.includes('finance') ? 'Active' : 'Idle', note: invoked.includes('finance') ? 'Checking invoices & cash flow' : 'Not invoked' },
+      { name: 'Inventory Bee', state: invoked.includes('inventory') ? 'Active' : 'Idle', note: invoked.includes('inventory') ? 'Evaluating stock risk' : 'Not invoked' },
+      { name: 'Advisor Bee', state: 'Active', note: queryResult.advisor_result ? queryResult.advisor_result.summary : 'Synthesizing evidence' },
+    ]
+  }, [queryResult])
+
+  const evidenceList = useMemo<EvidenceItem[]>(() => {
+    if (!queryResult) return []
+    const items: EvidenceItem[] = []
+
+    // Collect evidence from specialists
+    queryResult.specialist_results.forEach((spec: AgentResponse) => {
+      spec.evidence.forEach((ev: Evidence) => {
+        items.push({
+          label: `${spec.agent.toUpperCase()} - ${ev.metric}`,
+          value: String(ev.value),
+        })
+      })
+    })
+
+    // Add advisor summary if available
+    if (queryResult.advisor_result) {
+      items.push({
+        label: 'ADVISOR SUMMARY',
+        value: queryResult.advisor_result.summary,
+      })
+    }
+
+    return items
+  }, [queryResult])
+
+  const recommendationsList = useMemo<Recommendation[]>(() => {
+    if (!queryResult) return []
+    const recs: Recommendation[] = []
+
+    const allResults = [...queryResult.specialist_results]
+    if (queryResult.advisor_result) {
+      allResults.push(queryResult.advisor_result)
+    }
+
+    allResults.forEach((res: AgentResponse) => {
+      res.recommended_actions.forEach((act: RecommendedAction) => {
+        recs.push({
+          title: `${res.agent.toUpperCase()}: ${act.type.replace(/_/g, ' ')}`,
+          risk: act.risk_level as RiskLevel,
+          detail: `Confidence: ${res.confidence ?? 0.85}. Risk level evaluated as ${act.risk_level}.`,
+        })
+      })
+    })
+
+    return recs
+  }, [queryResult])
+
+  const auditTimeline = useMemo<string[]>(() => {
+    if (!queryResult) return []
+    return [
+      `Workflow ${queryResult.workflow_id} executed`,
+      `Queen Bee routed to agents: ${queryResult.invoked_agents.join(', ')}`,
+      `Guard decision evaluated as: ${queryResult.guard_decision}`,
+      queryResult.approval_required ? 'Approval required for AMBER/RED actions' : 'No approval needed (GREEN actions)',
+    ]
+  }, [queryResult])
 
   return (
     <main className="app-shell">
@@ -131,20 +190,23 @@ function App() {
               onChange={(event) => setQuestion(event.target.value)}
             />
           </label>
-          <button type="submit">Run Query</button>
+          <button type="submit" disabled={loading}>
+            {loading ? 'Analyzing Data...' : 'Run Query'}
+          </button>
         </form>
         <p className="hint">{languageHint}</p>
         <p className="contract-note">Main query endpoint: {apiRoutes.query}</p>
         {lastSubmitted ? (
           <p className="submitted">Submitted: “{lastSubmitted}”</p>
         ) : null}
+        {error && <p className="error" style={{ color: 'red' }}>Error: {error}</p>}
       </section>
 
       <section className="panel two-col">
         <article>
           <h2>Hive Activity</h2>
           <ul className="list">
-            {hiveAgents.map((agent) => (
+            {activeAgentsList.map((agent) => (
               <li key={agent.name}>
                 <span className={`badge ${agent.state.toLowerCase()}`}>{agent.state}</span>
                 <strong>{agent.name}</strong>
@@ -156,38 +218,50 @@ function App() {
 
         <article>
           <h2>Evidence</h2>
-          <ul className="list">
-            {evidence.map((item) => (
-              <li key={item.label}>
-                <strong>{item.label}</strong>
-                <p>{item.value}</p>
-              </li>
-            ))}
-          </ul>
+          {evidenceList.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Run a query to fetch real-time SQL evidence from dataset.</p>
+          ) : (
+            <ul className="list">
+              {evidenceList.map((item, idx) => (
+                <li key={idx}>
+                  <strong>{item.label}</strong>
+                  <p>{item.value}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
       </section>
 
       <section className="panel two-col">
         <article>
           <h2>Recommendations</h2>
-          <ul className="list">
-            {recommendations.map((item) => (
-              <li key={item.title}>
-                <span className={`badge ${item.risk.toLowerCase()}`}>{item.risk}</span>
-                <strong>{item.title}</strong>
-                <p>{item.detail}</p>
-              </li>
-            ))}
-          </ul>
+          {recommendationsList.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Run a query to generate AI recommendations.</p>
+          ) : (
+            <ul className="list">
+              {recommendationsList.map((item, idx) => (
+                <li key={idx}>
+                  <span className={`badge ${item.risk.toLowerCase()}`}>{item.risk}</span>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
 
         <article>
           <h2>Audit Timeline</h2>
-          <ul className="timeline">
-            {auditTimeline.map((event) => (
-              <li key={event}>{event}</li>
-            ))}
-          </ul>
+          {auditTimeline.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Workflow events will appear here after query execution.</p>
+          ) : (
+            <ul className="timeline">
+              {auditTimeline.map((event, idx) => (
+                <li key={idx}>{event}</li>
+              ))}
+            </ul>
+          )}
         </article>
       </section>
 
@@ -204,5 +278,3 @@ function App() {
     </main>
   )
 }
-
-export default App
