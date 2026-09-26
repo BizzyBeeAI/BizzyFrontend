@@ -72,3 +72,22 @@ export interface BusinessAlert {
   threshold?: JsonValue
   recommended_action?: RecommendedAction | null
 }
+
+export interface AuditAction {
+  agent: string
+  type: string
+  risk_level: RiskLevel
+  parameters?: JsonRecord
+}
+
+export interface AuditEvent {
+  workflow_id: string
+  user: string
+  question?: string | null
+  created_at: string
+  agents: string[]
+  statuses: Record<string, AgentStatus>
+  decision: GuardDecision | (string & {})
+  evidence_count: number
+  actions: AuditAction[]
+}

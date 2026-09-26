@@ -1,13 +1,20 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
-import { apiRoutes, queryBusiness } from './api/client'
+import { apiRoutes, fetchAuditEvent, queryBusiness } from './api/client'
 import { AlertsPanel } from './components/AlertsPanel'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
-import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
-import type { AgentResponse, Evidence, QueryResponse, RecommendedAction, RiskLevel } from './types/contracts'
+import { type LoadState, useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
+import type {
+  AgentResponse,
+  AuditEvent,
+  Evidence,
+  QueryResponse,
+  RecommendedAction,
+  RiskLevel,
+} from './types/contracts'
 import { formatEvidenceValue, humaniseKey } from './utils/evidence'
-import { formatPct } from './utils/format'
+import { formatPct, plural } from './utils/format'
 import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
 
 type HiveState = 'Active' | 'Idle'
@@ -29,6 +36,27 @@ interface Recommendation {
   detail: string
 }
 
+interface AuditRecord {
+  workflowId: string
+  state: LoadState<AuditEvent>
+}
+
+const auditTime = new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short' })
+
+function auditLines(event: AuditEvent): string[] {
+  const agents = event.agents.map((agent) => `${agent} (${event.statuses[agent] ?? 'unknown'})`).join(', ')
+  return [
+    `${auditTime.format(new Date(event.created_at))} · workflow ${event.workflow_id} started by ${event.user}`,
+    ...(event.question ? [`Question: “${event.question}”`] : []),
+    `Agents: ${agents}`,
+    `${plural(event.evidence_count, 'evidence item')} recorded`,
+    `Guard decision: ${humaniseKey(event.decision)}`,
+    ...event.actions.map(
+      (action) => `${humaniseKey(action.agent)} Bee proposed: ${humaniseKey(action.type)} (${action.risk_level})`,
+    ),
+  ]
+}
+
 export default function App() {
   const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE)
   const [question, setQuestion] = useState('Why did customer complaints increase?')
@@ -36,6 +64,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
+  const [auditRecord, setAuditRecord] = useState<AuditRecord | null>(null)
   const { sales, inventory, health, alerts, reload } = useSalesInventory(selectedLanguage)
 
   const dashboardMetrics = [
@@ -53,6 +82,18 @@ export default function App() {
     return `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${label}).${fallback}`
   }, [selectedLanguage])
 
+  function loadAuditRecord(workflowId: string) {
+    const settle = (state: LoadState<AuditEvent>) =>
+      setAuditRecord((current) => (current?.workflowId === workflowId ? { workflowId, state } : current))
+
+    setAuditRecord({ workflowId, state: { status: 'loading' } })
+    fetchAuditEvent(workflowId)
+      .then((data) => settle({ status: 'ready', data }))
+      .catch((err: unknown) =>
+        settle({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load the audit record' }),
+      )
+  }
+
   async function submitQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!question.trim()) return
@@ -68,6 +109,7 @@ export default function App() {
         user: 'owner@bizzybee',
       })
       setQueryResult(response)
+      loadAuditRecord(response.workflow_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to query business API')
     } finally {
@@ -147,15 +189,18 @@ export default function App() {
     return recs
   }, [queryResult])
 
+  const currentAudit = queryResult && auditRecord?.workflowId === queryResult.workflow_id ? auditRecord.state : null
+
   const auditTimeline = useMemo<string[]>(() => {
     if (!queryResult) return []
+    if (currentAudit?.status === 'ready') return auditLines(currentAudit.data)
     return [
       `Workflow ${queryResult.workflow_id} executed`,
       `Queen Bee routed to agents: ${queryResult.invoked_agents.join(', ')}`,
       `Guard decision evaluated as: ${queryResult.guard_decision}`,
       queryResult.approval_required ? 'Approval required for AMBER/RED actions' : 'No approval needed (GREEN actions)',
     ]
-  }, [queryResult])
+  }, [queryResult, currentAudit])
 
   return (
     <main className="app-shell">
@@ -277,6 +322,9 @@ export default function App() {
               ))}
             </ul>
           )}
+          {currentAudit?.status === 'error' ? (
+            <p className="hint">The stored audit record couldn't be loaded, so this is the workflow summary instead.</p>
+          ) : null}
         </article>
       </section>
 

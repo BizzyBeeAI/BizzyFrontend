@@ -1,4 +1,4 @@
-import type { BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
+import type { AuditEvent, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -41,4 +41,8 @@ export function queryBusiness(payload: QueryRequest): Promise<QueryResponse> {
 
 export function fetchBusinessHealth(signal?: AbortSignal): Promise<BusinessHealthResponse> {
   return requestJson<BusinessHealthResponse>(apiRoutes.businessHealth, 'the business health summary', { signal })
+}
+
+export function fetchAuditEvent(workflowId: string): Promise<AuditEvent> {
+  return requestJson<AuditEvent>(apiRoutes.auditTrail(encodeURIComponent(workflowId)), 'the audit record')
 }
