@@ -4,11 +4,11 @@ import { apiRoutes, queryBusiness } from './api/client'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
 import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
-import type { QueryResponse, AgentResponse, Evidence, RecommendedAction } from './types/contracts'
+import type { AgentResponse, Evidence, QueryResponse, RecommendedAction, RiskLevel } from './types/contracts'
+import { formatEvidenceValue, humaniseKey } from './utils/evidence'
 import { formatPct } from './utils/format'
 
 type HiveState = 'Active' | 'Idle'
-type RiskLevel = 'GREEN' | 'AMBER' | 'RED'
 
 interface HiveAgent {
   name: string
@@ -105,8 +105,8 @@ export default function App() {
     queryResult.specialist_results.forEach((spec: AgentResponse) => {
       spec.evidence.forEach((ev: Evidence) => {
         items.push({
-          label: `${spec.agent.toUpperCase()} - ${ev.metric}`,
-          value: String(ev.value),
+          label: `${spec.agent.toUpperCase()} · ${humaniseKey(ev.metric)}`,
+          value: formatEvidenceValue(ev),
         })
       })
     })
@@ -133,10 +133,11 @@ export default function App() {
 
     allResults.forEach((res: AgentResponse) => {
       res.recommended_actions.forEach((act: RecommendedAction) => {
+        const approval = act.risk_level === 'GREEN' ? '' : ' Human approval required before anything is sent.'
         recs.push({
-          title: `${res.agent.toUpperCase()}: ${act.type.replace(/_/g, ' ')}`,
-          risk: act.risk_level as RiskLevel,
-          detail: `Confidence: ${res.confidence ?? 0.85}. Risk level evaluated as ${act.risk_level}.`,
+          title: `${res.agent.toUpperCase()}: ${humaniseKey(act.type)}`,
+          risk: act.risk_level,
+          detail: `${act.reason ?? `Risk level evaluated as ${act.risk_level}.`}${approval} Confidence ${Math.round(res.confidence * 100)}%.`,
         })
       })
     })
