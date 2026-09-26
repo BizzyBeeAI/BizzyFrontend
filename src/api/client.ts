@@ -1,8 +1,10 @@
 import type { AuditEvent, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
+import { accessToken } from '../auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
 export const apiRoutes = {
+  me: `${API_BASE_URL}/me`,
   query: `${API_BASE_URL}/query`,
   businessHealth: `${API_BASE_URL}/business-health`,
   salesSummary: `${API_BASE_URL}/sales/summary`,
@@ -19,10 +21,14 @@ export const apiRoutes = {
 export async function requestJson<T>(url: string, label: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
-    response = await fetch(url, init)
+    const token = await accessToken()
+    const headers = new Headers(init?.headers)
+    if (token) headers.set('Authorization', `Bearer ${token}`)
+    const timeout = AbortSignal.timeout(30000)
+    response = await fetch(url, { ...init, headers, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout })
   } catch (error) {
     if (init?.signal?.aborted) throw error
-    throw new Error(`Couldn't reach the BizzyBee backend for ${label}. Make sure it is running on port 8000.`)
+    throw new Error(error instanceof Error ? error.message : `Couldn't reach the BizzyBee backend for ${label}.`)
   }
 
   if (!response.ok) {

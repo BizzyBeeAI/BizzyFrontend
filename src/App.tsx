@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
 import { apiRoutes, fetchAuditEvent, queryBusiness } from './api/client'
 import { AlertsPanel } from './components/AlertsPanel'
+import { ApprovalControls } from './components/ApprovalControls'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
 import { type LoadState, useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
@@ -111,7 +112,6 @@ export default function App() {
       const response = await queryBusiness({
         question: question.trim(),
         language: selectedLanguage,
-        user: 'owner@bizzybee',
       })
       setQueryResult(response)
       loadAuditRecord(response.workflow_id)
@@ -182,7 +182,7 @@ export default function App() {
 
     allResults.forEach((res: AgentResponse) => {
       res.recommended_actions.forEach((act: RecommendedAction) => {
-        const approval = act.risk_level === 'GREEN' ? '' : ' Human approval required before anything is sent.'
+        const approval = act.risk_level === 'GREEN' ? '' : act.risk_level === 'RED' ? ' Blocked; cannot be approved or executed.' : ' Human approval required before anything is sent.'
         recs.push({
           title: `${res.agent.toUpperCase()}: ${humaniseKey(act.type)}`,
           risk: act.risk_level,
@@ -346,12 +346,7 @@ export default function App() {
         ) : (
           <p>The Guard found no approval requirement. No external business action was submitted.</p>
         )}
-        <div className="actions">
-          <button type="button">Approve Draft Action</button>
-          <button type="button" className="secondary">
-            Reject Draft Action
-          </button>
-        </div>
+        {currentAudit?.status === 'ready' && <ApprovalControls key={currentAudit.data.workflow_id} event={currentAudit.data} reload={() => loadAuditRecord(currentAudit.data.workflow_id)} />}
       </section>
     </main>
   )

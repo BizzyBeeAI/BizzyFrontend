@@ -8,9 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test:integration": "node integration-test.mjs",
+    "test:contract": "node scripts/check-contract.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "oidc-client-ts": "3.3.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

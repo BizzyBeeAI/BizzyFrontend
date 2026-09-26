@@ -63,7 +63,7 @@ check(typeof query.approval_required === 'boolean', 'Guard decision is missing')
 
 const audit = await requestJson(`${apiBase}/audit/${encodeURIComponent(query.workflow_id)}`)
 check(audit.workflow_id === query.workflow_id, 'Audit workflow ID does not match the query')
-check(audit.user === 'integration-test', 'Audit record did not preserve the query user')
+check(audit.user === 'owner', 'Local audit must use the server identity, not the caller-controlled user field')
 
 const frontendResponse = await fetch(frontendOrigin)
 check(frontendResponse.ok, `Frontend returned HTTP ${frontendResponse.status}`)
