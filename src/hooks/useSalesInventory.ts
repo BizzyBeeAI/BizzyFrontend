@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchInventoryView, fetchSalesView } from '../api/salesInventory'
+import { fetchBusinessHealth } from '../api/client'
+import { fetchAlerts, fetchInventoryView, fetchSalesView } from '../api/salesInventory'
+import type { BusinessAlert, BusinessHealthResponse } from '../types/contracts'
 import type { InventoryView, SalesView } from '../types/salesInventory'
 
 export type LoadState<T> =
@@ -31,6 +33,8 @@ export function valueWhenReady<T>(state: LoadState<T>, pick: (data: T) => string
 export function useSalesInventory(language: string) {
   const [sales, setSales] = useState<LoadState<SalesView>>(LOADING)
   const [inventory, setInventory] = useState<LoadState<InventoryView>>(LOADING)
+  const [health, setHealth] = useState<LoadState<BusinessHealthResponse>>(LOADING)
+  const [alerts, setAlerts] = useState<LoadState<BusinessAlert[]>>(LOADING)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -40,11 +44,20 @@ export function useSalesInventory(language: string) {
     return () => controller.abort()
   }, [attempt, language])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    load(fetchBusinessHealth, setHealth, controller.signal)
+    load(fetchAlerts, setAlerts, controller.signal)
+    return () => controller.abort()
+  }, [attempt])
+
   const reload = useCallback(() => {
     setSales(LOADING)
     setInventory(LOADING)
+    setHealth(LOADING)
+    setAlerts(LOADING)
     setAttempt((value) => value + 1)
   }, [])
 
-  return { sales, inventory, reload }
+  return { sales, inventory, health, alerts, reload }
 }

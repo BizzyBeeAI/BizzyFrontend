@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
 import { apiRoutes, queryBusiness } from './api/client'
+import { AlertsPanel } from './components/AlertsPanel'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
 import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
@@ -35,10 +36,10 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
-  const { sales, inventory, reload } = useSalesInventory(selectedLanguage)
+  const { sales, inventory, health, alerts, reload } = useSalesInventory(selectedLanguage)
 
   const dashboardMetrics = [
-    { label: 'Business Health', value: '78/100' },
+    { label: 'Business Health', value: valueWhenReady(health, (data) => `${data.score}/100`) },
     { label: 'Sales Trend (WoW)', value: valueWhenReady(sales, (view) => formatPct(view.revenueChangePct)) },
     { label: 'Overdue Invoices', value: '6' },
     { label: 'Out of Stock', value: valueWhenReady(inventory, (view) => String(view.riskCounts.out_of_stock)) },
@@ -172,6 +173,8 @@ export default function App() {
           </article>
         ))}
       </section>
+
+      <AlertsPanel state={alerts} onRetry={reload} />
 
       <section className="panel two-col" aria-label="Sales and inventory monitoring">
         <SalesPanel state={sales} onRetry={reload} />

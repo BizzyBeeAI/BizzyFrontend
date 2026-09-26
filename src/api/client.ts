@@ -9,6 +9,7 @@ export const apiRoutes = {
   customerOpportunities: `${API_BASE_URL}/customers/opportunities`,
   financeHealth: `${API_BASE_URL}/finance/health`,
   inventoryStatus: `${API_BASE_URL}/inventory/status`,
+  salesInventoryAlerts: `${API_BASE_URL}/sales-inventory/alerts`,
   approveAction: (id: string) => `${API_BASE_URL}/actions/${id}/approve`,
   rejectAction: (id: string) => `${API_BASE_URL}/actions/${id}/reject`,
   auditTrail: (workflowId: string) => `${API_BASE_URL}/audit/${workflowId}`,
@@ -38,6 +39,6 @@ export function queryBusiness(payload: QueryRequest): Promise<QueryResponse> {
   })
 }
 
-export function fetchBusinessHealth(): Promise<BusinessHealthResponse> {
-  return requestJson<BusinessHealthResponse>(apiRoutes.businessHealth, 'the business health summary')
+export function fetchBusinessHealth(signal?: AbortSignal): Promise<BusinessHealthResponse> {
+  return requestJson<BusinessHealthResponse>(apiRoutes.businessHealth, 'the business health summary', { signal })
 }

@@ -51,5 +51,24 @@ export interface QueryResponse {
 
 export interface BusinessHealthResponse {
   score: number
+  status?: string
+  as_of?: string
   priority_issues: string[]
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info'
+
+export interface BusinessAlert {
+  alert_id: string
+  alert_type: string
+  severity: AlertSeverity
+  agent: string
+  title: string
+  message: string
+  as_of: string
+  product_id?: string | null
+  metric?: string | null
+  current_value?: JsonValue
+  threshold?: JsonValue
+  recommended_action?: RecommendedAction | null
 }

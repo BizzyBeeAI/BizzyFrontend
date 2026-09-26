@@ -1,4 +1,4 @@
-import type { AgentResponse, JsonRecord, JsonValue } from '../types/contracts'
+import type { AgentResponse, BusinessAlert, JsonRecord, JsonValue } from '../types/contracts'
 import type {
   ChannelSalesChange,
   FocusStock,
@@ -219,4 +219,8 @@ export async function fetchSalesView(language: string, signal?: AbortSignal): Pr
 export async function fetchInventoryView(language: string, signal?: AbortSignal): Promise<InventoryView> {
   const url = withLanguage(apiRoutes.inventoryStatus, language)
   return toInventoryView(await fetchBee(url, 'the inventory status', signal))
+}
+
+export function fetchAlerts(signal?: AbortSignal): Promise<BusinessAlert[]> {
+  return requestJson<BusinessAlert[]>(apiRoutes.salesInventoryAlerts, 'the sales and inventory alerts', { signal })
 }
