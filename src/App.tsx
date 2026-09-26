@@ -17,6 +17,7 @@ import type {
   RiskLevel,
 } from './types/contracts'
 import { formatEvidenceValue, humaniseKey } from './utils/evidence'
+import { FinancePanel } from './components/FinancePanel'
 import { formatPct, plural } from './utils/format'
 import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
 
@@ -215,6 +216,8 @@ export default function App() {
         <SalesPanel state={sales} onRetry={reload} />
         <InventoryPanel state={inventory} onRetry={reload} />
       </section>
+
+      <FinancePanel />
 
       <section className="panel" id="ask">
         <p className="eyebrow">QUESTION → EVIDENCE → RECOMMENDATION</p>

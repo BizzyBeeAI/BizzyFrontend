@@ -11,6 +11,7 @@ export const apiRoutes = {
   customerOpportunities: `${API_BASE_URL}/customers/opportunities`,
   financeHealth: `${API_BASE_URL}/finance/health`,
   financeSummary: `${API_BASE_URL}/finance/summary`,
+  financeReport: `${API_BASE_URL}/finance/report`,
   inventoryStatus: `${API_BASE_URL}/inventory/status`,
   salesInventoryAlerts: `${API_BASE_URL}/sales-inventory/alerts`,
   approveAction: (id: string) => `${API_BASE_URL}/actions/${id}/approve`,
