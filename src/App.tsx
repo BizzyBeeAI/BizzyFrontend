@@ -335,6 +335,7 @@ export default function App() {
 
       <section className="panel approval-actions">
         <h2>Approval Gate</h2>
+        <p>AMBER actions require authorised human approval before commitment.</p>
         {!queryResult ? (
           <p>Run a query to evaluate whether a proposed action requires approval.</p>
         ) : queryResult.approval_required ? (
@@ -345,6 +346,12 @@ export default function App() {
         ) : (
           <p>The Guard found no approval requirement. No external business action was submitted.</p>
         )}
+        <div className="actions">
+          <button type="button">Approve Draft Action</button>
+          <button type="button" className="secondary">
+            Reject Draft Action
+          </button>
+        </div>
       </section>
     </main>
   )
