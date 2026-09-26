@@ -1,9 +1,23 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import './App.css'
-import { apiRoutes } from './api/client'
+import { apiRoutes, fetchAuditEvent, queryBusiness } from './api/client'
+import { AlertsPanel } from './components/AlertsPanel'
+import { InventoryPanel } from './components/InventoryPanel'
+import { SalesPanel } from './components/SalesPanel'
+import { type LoadState, useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
+import type {
+  AgentResponse,
+  AuditEvent,
+  Evidence,
+  QueryResponse,
+  RecommendedAction,
+  RiskLevel,
+} from './types/contracts'
+import { formatEvidenceValue, humaniseKey } from './utils/evidence'
+import { formatPct, plural } from './utils/format'
+import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
 
 type HiveState = 'Active' | 'Idle'
-type RiskLevel = 'GREEN' | 'AMBER' | 'RED'
 
 interface HiveAgent {
   name: string
@@ -22,73 +36,176 @@ interface Recommendation {
   detail: string
 }
 
-const supportedLanguages = ['English', 'Tamil', 'Mandarin', 'Bahasa Melayu', 'Hindi']
+interface AuditRecord {
+  workflowId: string
+  state: LoadState<AuditEvent>
+}
 
-const dashboardMetrics = [
-  { label: 'Business Health', value: '78/100' },
-  { label: 'Sales Trend (WoW)', value: '-18%' },
-  { label: 'Overdue Invoices', value: '6' },
-  { label: 'Stock Risk Items', value: '3' },
-]
+const auditTime = new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short' })
 
-const hiveAgents: HiveAgent[] = [
-  { name: 'Queen Bee', state: 'Active', note: 'Routing business query' },
-  { name: 'Sales Bee', state: 'Active', note: 'Checking category decline' },
-  { name: 'Inventory Bee', state: 'Active', note: 'Evaluating stock-out risk' },
-  { name: 'Finance Bee', state: 'Idle', note: 'Ready for cash-flow checks' },
-  { name: 'Customer Bee', state: 'Active', note: 'Reviewing missed opportunities' },
-  { name: 'Advisor Bee', state: 'Idle', note: 'Awaiting specialist evidence' },
-  { name: 'Guard Bee', state: 'Idle', note: 'Policy checks pending recommendation' },
-  { name: 'Audit Bee', state: 'Idle', note: 'Recording workflow events' },
-]
+function auditLines(event: AuditEvent): string[] {
+  const agents = event.agents.map((agent) => `${agent} (${event.statuses[agent] ?? 'unknown'})`).join(', ')
+  return [
+    `${auditTime.format(new Date(event.created_at))} · workflow ${event.workflow_id} started by ${event.user}`,
+    ...(event.question ? [`Question: “${event.question}”`] : []),
+    `Agents: ${agents}`,
+    `${plural(event.evidence_count, 'evidence item')} recorded`,
+    `Guard decision: ${humaniseKey(event.decision)}`,
+    ...event.actions.map(
+      (action) => `${humaniseKey(action.agent)} Bee proposed: ${humaniseKey(action.type)} (${action.risk_level})`,
+    ),
+  ]
+}
 
-const evidence: EvidenceItem[] = [
-  { label: 'Product A stock', value: '14 units (3-day runout risk)' },
-  { label: 'Sales decline', value: '-18% week-over-week' },
-  { label: 'Unconverted leads', value: '12 high-intent enquiries' },
-  { label: 'Overdue invoices', value: 'SGD 48,000 across 6 invoices' },
-]
-
-const recommendations: Recommendation[] = [
-  {
-    title: 'Prepare purchase order draft for Product A',
-    risk: 'AMBER',
-    detail: 'Draft only. Human approval required before supplier commitment.',
-  },
-  {
-    title: 'Send follow-up responses to top 5 warm leads',
-    risk: 'AMBER',
-    detail: 'Generate multilingual drafts for owner review.',
-  },
-  {
-    title: 'Review overdue invoices with finance team',
-    risk: 'GREEN',
-    detail: 'No external transaction is executed automatically.',
-  },
-]
-
-const auditTimeline = [
-  'Workflow bb-workflow-2026-09-23 started by owner@bizzybee',
-  'Queen Bee routed to Sales, Customer, Inventory and Finance Bees',
-  'Advisor Bee produced ranked recommendations with confidence 0.91',
-  'Guard Bee marked reorder action as AMBER (approval required)',
-]
-
-function App() {
-  const [selectedLanguage, setSelectedLanguage] = useState(supportedLanguages[0])
-  const [question, setQuestion] = useState('Why did sales fall this week?')
+export default function App() {
+  const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE)
+  const [question, setQuestion] = useState('Why did customer complaints increase?')
   const [lastSubmitted, setLastSubmitted] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
+  const [auditRecord, setAuditRecord] = useState<AuditRecord | null>(null)
+  const { sales, inventory, finance, health, alerts, reload } = useSalesInventory(selectedLanguage)
 
-  const languageHint = useMemo(
-    () =>
-      `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${selectedLanguage}).`,
-    [selectedLanguage],
-  )
+  const dashboardMetrics = [
+    { label: 'Business Health', value: valueWhenReady(health, (data) => `${data.score}/100`) },
+    { label: 'Sales Trend (WoW)', value: valueWhenReady(sales, (view) => formatPct(view.revenueChangePct)) },
+    {
+      label: 'Overdue Invoices',
+      value: valueWhenReady(finance, (view) =>
+        view.overdueInvoiceCount === null ? '—' : String(view.overdueInvoiceCount),
+      ),
+    },
+    { label: 'Out of Stock', value: valueWhenReady(inventory, (view) => String(view.riskCounts.out_of_stock)) },
+  ]
 
-  function submitQuery(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setLastSubmitted(question.trim())
+  const languageHint = useMemo(() => {
+    const label = languageLabel(selectedLanguage)
+    const fallback = hasLocalisedSummaries(selectedLanguage)
+      ? ''
+      : ` ${label} summaries aren't available yet, so answers are shown in English.`
+    return `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${label}).${fallback}`
+  }, [selectedLanguage])
+
+  function loadAuditRecord(workflowId: string) {
+    const settle = (state: LoadState<AuditEvent>) =>
+      setAuditRecord((current) => (current?.workflowId === workflowId ? { workflowId, state } : current))
+
+    setAuditRecord({ workflowId, state: { status: 'loading' } })
+    fetchAuditEvent(workflowId)
+      .then((data) => settle({ status: 'ready', data }))
+      .catch((err: unknown) =>
+        settle({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load the audit record' }),
+      )
   }
+
+  async function submitQuery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!question.trim()) return
+
+    setLoading(true)
+    setError(null)
+    setLastSubmitted(question.trim())
+
+    try {
+      const response = await queryBusiness({
+        question: question.trim(),
+        language: selectedLanguage,
+        user: 'owner@bizzybee',
+      })
+      setQueryResult(response)
+      loadAuditRecord(response.workflow_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to query business API')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Map Backend Response -> UI Displays
+  const activeAgentsList = useMemo<HiveAgent[]>(() => {
+    if (!queryResult) {
+      return [
+        { name: 'Queen Bee', state: 'Idle', note: 'Awaiting user query' },
+        { name: 'Sales Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Customer Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Finance Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Inventory Bee', state: 'Idle', note: 'Ready' },
+        { name: 'Advisor Bee', state: 'Idle', note: 'Awaiting specialist evidence' },
+      ]
+    }
+
+    const invoked = queryResult.invoked_agents || []
+    return [
+      { name: 'Queen Bee', state: 'Active', note: `Routed to: ${invoked.join(', ')}` },
+      { name: 'Sales Bee', state: invoked.includes('sales') ? 'Active' : 'Idle', note: invoked.includes('sales') ? 'Analyzing sales trends' : 'Not invoked' },
+      { name: 'Customer Bee', state: invoked.includes('customer') ? 'Active' : 'Idle', note: invoked.includes('customer') ? 'Analyzing customer complaints & SLA' : 'Not invoked' },
+      { name: 'Finance Bee', state: invoked.includes('finance') ? 'Active' : 'Idle', note: invoked.includes('finance') ? 'Checking invoices & cash flow' : 'Not invoked' },
+      { name: 'Inventory Bee', state: invoked.includes('inventory') ? 'Active' : 'Idle', note: invoked.includes('inventory') ? 'Evaluating stock risk' : 'Not invoked' },
+      { name: 'Advisor Bee', state: 'Active', note: queryResult.advisor_result ? queryResult.advisor_result.summary : 'Synthesizing evidence' },
+    ]
+  }, [queryResult])
+
+  const evidenceList = useMemo<EvidenceItem[]>(() => {
+    if (!queryResult) return []
+    const items: EvidenceItem[] = []
+
+    // Collect evidence from specialists
+    queryResult.specialist_results.forEach((spec: AgentResponse) => {
+      spec.evidence.forEach((ev: Evidence) => {
+        items.push({
+          label: `${spec.agent.toUpperCase()} · ${humaniseKey(ev.metric)}`,
+          value: formatEvidenceValue(ev),
+        })
+      })
+    })
+
+    // Add advisor summary if available
+    if (queryResult.advisor_result) {
+      items.push({
+        label: 'ADVISOR SUMMARY',
+        value: queryResult.advisor_result.summary,
+      })
+    }
+
+    return items
+  }, [queryResult])
+
+  const recommendationsList = useMemo<Recommendation[]>(() => {
+    if (!queryResult) return []
+    const recs: Recommendation[] = []
+
+    const allResults = [...queryResult.specialist_results]
+    if (queryResult.advisor_result) {
+      allResults.push(queryResult.advisor_result)
+    }
+
+    allResults.forEach((res: AgentResponse) => {
+      res.recommended_actions.forEach((act: RecommendedAction) => {
+        const approval = act.risk_level === 'GREEN' ? '' : ' Human approval required before anything is sent.'
+        recs.push({
+          title: `${res.agent.toUpperCase()}: ${humaniseKey(act.type)}`,
+          risk: act.risk_level,
+          detail: `${act.reason ?? `Risk level evaluated as ${act.risk_level}.`}${approval} Confidence ${Math.round(res.confidence * 100)}%.`,
+        })
+      })
+    })
+
+    return recs
+  }, [queryResult])
+
+  const currentAudit = queryResult && auditRecord?.workflowId === queryResult.workflow_id ? auditRecord.state : null
+
+  const auditTimeline = useMemo<string[]>(() => {
+    if (!queryResult) return []
+    if (currentAudit?.status === 'ready') return auditLines(currentAudit.data)
+    return [
+      `Workflow ${queryResult.workflow_id} executed`,
+      `Queen Bee routed to agents: ${queryResult.invoked_agents.join(', ')}`,
+      `Guard decision evaluated as: ${queryResult.guard_decision}`,
+      queryResult.approval_required ? 'Approval required for AMBER/RED actions' : 'No approval needed (GREEN actions)',
+    ]
+  }, [queryResult, currentAudit])
 
   return (
     <main className="app-shell">
@@ -107,6 +224,13 @@ function App() {
         ))}
       </section>
 
+      <AlertsPanel state={alerts} onRetry={reload} />
+
+      <section className="panel two-col" aria-label="Sales and inventory monitoring">
+        <SalesPanel state={sales} onRetry={reload} />
+        <InventoryPanel state={inventory} onRetry={reload} />
+      </section>
+
       <section className="panel">
         <h2>Ask BizzyBee</h2>
         <form className="query-form" onSubmit={submitQuery}>
@@ -116,9 +240,9 @@ function App() {
               value={selectedLanguage}
               onChange={(event) => setSelectedLanguage(event.target.value)}
             >
-              {supportedLanguages.map((language) => (
-                <option key={language} value={language}>
-                  {language}
+              {LANGUAGES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.label}
                 </option>
               ))}
             </select>
@@ -131,20 +255,23 @@ function App() {
               onChange={(event) => setQuestion(event.target.value)}
             />
           </label>
-          <button type="submit">Run Query</button>
+          <button type="submit" disabled={loading}>
+            {loading ? 'Analyzing Data...' : 'Run Query'}
+          </button>
         </form>
         <p className="hint">{languageHint}</p>
         <p className="contract-note">Main query endpoint: {apiRoutes.query}</p>
         {lastSubmitted ? (
           <p className="submitted">Submitted: “{lastSubmitted}”</p>
         ) : null}
+        {error && <p className="error" style={{ color: 'red' }}>Error: {error}</p>}
       </section>
 
       <section className="panel two-col">
         <article>
           <h2>Hive Activity</h2>
           <ul className="list">
-            {hiveAgents.map((agent) => (
+            {activeAgentsList.map((agent) => (
               <li key={agent.name}>
                 <span className={`badge ${agent.state.toLowerCase()}`}>{agent.state}</span>
                 <strong>{agent.name}</strong>
@@ -156,44 +283,69 @@ function App() {
 
         <article>
           <h2>Evidence</h2>
-          <ul className="list">
-            {evidence.map((item) => (
-              <li key={item.label}>
-                <strong>{item.label}</strong>
-                <p>{item.value}</p>
-              </li>
-            ))}
-          </ul>
+          {evidenceList.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Run a query to fetch real-time SQL evidence from dataset.</p>
+          ) : (
+            <ul className="list">
+              {evidenceList.map((item, idx) => (
+                <li key={idx}>
+                  <strong>{item.label}</strong>
+                  <p>{item.value}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
       </section>
 
       <section className="panel two-col">
         <article>
           <h2>Recommendations</h2>
-          <ul className="list">
-            {recommendations.map((item) => (
-              <li key={item.title}>
-                <span className={`badge ${item.risk.toLowerCase()}`}>{item.risk}</span>
-                <strong>{item.title}</strong>
-                <p>{item.detail}</p>
-              </li>
-            ))}
-          </ul>
+          {recommendationsList.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Run a query to generate AI recommendations.</p>
+          ) : (
+            <ul className="list">
+              {recommendationsList.map((item, idx) => (
+                <li key={idx}>
+                  <span className={`badge ${item.risk.toLowerCase()}`}>{item.risk}</span>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
 
         <article>
           <h2>Audit Timeline</h2>
-          <ul className="timeline">
-            {auditTimeline.map((event) => (
-              <li key={event}>{event}</li>
-            ))}
-          </ul>
+          {auditTimeline.length === 0 ? (
+            <p style={{ padding: '1rem', color: '#666' }}>Workflow events will appear here after query execution.</p>
+          ) : (
+            <ul className="timeline">
+              {auditTimeline.map((event, idx) => (
+                <li key={idx}>{event}</li>
+              ))}
+            </ul>
+          )}
+          {currentAudit?.status === 'error' ? (
+            <p className="hint">The stored audit record couldn't be loaded, so this is the workflow summary instead.</p>
+          ) : null}
         </article>
       </section>
 
       <section className="panel approval-actions">
         <h2>Approval Gate</h2>
         <p>AMBER actions require authorised human approval before commitment.</p>
+        {!queryResult ? (
+          <p>Run a query to evaluate whether a proposed action requires approval.</p>
+        ) : queryResult.approval_required ? (
+          <p>
+            The Guard has paused this recommendation for authorised human review. This build records the draft only;
+            no business action has been committed.
+          </p>
+        ) : (
+          <p>The Guard found no approval requirement. No external business action was submitted.</p>
+        )}
         <div className="actions">
           <button type="button">Approve Draft Action</button>
           <button type="button" className="secondary">
@@ -204,5 +356,3 @@ function App() {
     </main>
   )
 }
-
-export default App
