@@ -1,15 +1,21 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import {
+  fetchAuditEvent,
   fetchAuditHistory,
   fetchAuditTrace,
-  fetchBusinessHealth,
   queryBusiness,
 } from './api/client'
+import { AlertsPanel } from './components/AlertsPanel'
+import { InventoryPanel } from './components/InventoryPanel'
+import { SalesPanel } from './components/SalesPanel'
+import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
+import { formatPct } from './utils/format'
+import { DEFAULT_LANGUAGE, LANGUAGES, hasLocalisedSummaries, languageLabel } from './utils/languages'
 import type {
+  AuditEvent,
   AgentResponse,
   AuditRecord,
-  BusinessHealthResponse,
   GuardActionExplanation,
   QueryResponse,
   RecommendedAction,
@@ -43,7 +49,7 @@ interface Recommendation {
   evidenceReferences: string[]
 }
 
-const supportedLanguages = ['English', 'Tamil', 'Mandarin', 'Bahasa Melayu', 'Hindi']
+// Language codes are shared with the team backend contract.
 
 const agentDirectory = [
   { id: 'queen', name: 'Queen Bee', glyph: '♛', color: 'gold', purpose: 'Routes each business question to relevant specialists.' },
@@ -125,14 +131,15 @@ function displayValue(value: unknown): string {
 }
 
 export default function App() {
-  const [selectedLanguage, setSelectedLanguage] = useState(supportedLanguages[0])
+  const [selectedLanguage, setSelectedLanguage] = useState(DEFAULT_LANGUAGE)
   const [question, setQuestion] = useState('Why did customer complaints increase?')
   const [lastSubmitted, setLastSubmitted] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
-  const [businessHealth, setBusinessHealth] = useState<BusinessHealthResponse | null>(null)
-  const [businessHealthError, setBusinessHealthError] = useState<string | null>(null)
+  const { sales, inventory, finance, health, alerts, reload } = useSalesInventory(selectedLanguage)
+  const [workflowAudit, setWorkflowAudit] = useState<AuditEvent | null>(null)
+  const [workflowAuditError, setWorkflowAuditError] = useState<string | null>(null)
   const [selectedAgentId, setSelectedAgentId] = useState('queen')
   const [auditHistory, setAuditHistory] = useState<AuditRecord[]>([])
   const [auditHistoryLoading, setAuditHistoryLoading] = useState(true)
@@ -143,7 +150,7 @@ export default function App() {
 
   const languageHint = useMemo(
     () =>
-      `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${selectedLanguage}).`,
+      `Critical values such as SGD, invoice IDs and quantities stay structured regardless of language (${languageLabel(selectedLanguage)}).${hasLocalisedSummaries(selectedLanguage) ? '' : ' Summaries may be shown in English.'}`, 
     [selectedLanguage],
   )
 
@@ -177,15 +184,6 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    fetchBusinessHealth()
-      .then((summary) => {
-        if (!cancelled) setBusinessHealth(summary)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setBusinessHealthError(err instanceof Error ? err.message : 'Unable to load business health.')
-        }
-      })
     fetchAuditHistory(20)
       .then((response) => {
         if (!cancelled) setAuditHistory(response.items)
@@ -220,6 +218,11 @@ export default function App() {
         user: 'owner@bizzybee',
       })
       setQueryResult(response)
+      setWorkflowAudit(null)
+      setWorkflowAuditError(null)
+      void fetchAuditEvent(response.workflow_id)
+        .then(setWorkflowAudit)
+        .catch((err: unknown) => setWorkflowAuditError(err instanceof Error ? err.message : 'Workflow audit event unavailable'))
       void refreshAuditHistory()
       await openAuditTrace(response.workflow_id)
     } catch (err) {
@@ -374,7 +377,7 @@ export default function App() {
   const businessMetrics = [
     {
       label: 'Business health',
-      value: businessHealth ? `${businessHealth.score}/100` : '—',
+      value: valueWhenReady(health, (data) => `${data.score}/100`),
       detail: 'Backend demo summary',
       tone: 'gold',
     },
@@ -485,8 +488,20 @@ export default function App() {
             </article>
           ))}
         </section>
-        {businessHealthError && <p className="inline-error" role="alert">Business health summary unavailable: {businessHealthError}</p>}
         <p className="provenance-note">Business health score is the backend’s synthetic demo summary. Query metrics below come from specialist evidence.</p>
+
+        <section className="kpi-grid" aria-label="Live specialist summaries">
+          <article className="kpi-card tone-blue"><div className="kpi-topline"><span>Sales trend (WoW)</span></div><strong className="kpi-value">{valueWhenReady(sales, (view) => formatPct(view.revenueChangePct))}</strong><p>Sales service summary</p></article>
+          <article className="kpi-card tone-green"><div className="kpi-topline"><span>Overdue invoices</span></div><strong className="kpi-value">{valueWhenReady(finance, (view) => view.overdueInvoiceCount === null ? '—' : String(view.overdueInvoiceCount))}</strong><p>Finance service summary</p></article>
+          <article className="kpi-card tone-coral"><div className="kpi-topline"><span>Out of stock</span></div><strong className="kpi-value">{valueWhenReady(inventory, (view) => String(view.riskCounts.out_of_stock))}</strong><p>Inventory service summary</p></article>
+        </section>
+        <div className="team-panels" aria-label="Sales inventory and alerts">
+          <AlertsPanel state={alerts} onRetry={reload} />
+          <div className="team-panel-grid">
+            <SalesPanel state={sales} onRetry={reload} />
+            <InventoryPanel state={inventory} onRetry={reload} />
+          </div>
+        </div>
 
         <section className="panel ask-panel" id="ask">
           <div className="section-heading">
@@ -498,7 +513,7 @@ export default function App() {
             <label className="language-field">
               <span>Language</span>
               <select value={selectedLanguage} onChange={(event) => setSelectedLanguage(event.target.value)}>
-                {supportedLanguages.map((language) => <option key={language} value={language}>{language}</option>)}
+                {LANGUAGES.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}
               </select>
             </label>
             <label className="question-field">
@@ -596,7 +611,7 @@ export default function App() {
                 {!contextGuardDecision ? <p className="empty-state">Guard has not evaluated actions for the selected query.</p> : <>
                   <div className="detail-section-title"><strong>Policy evaluation</strong><span className={`badge guard-${guardState(contextGuardDecision)}`}>{guardState(contextGuardDecision).replaceAll('_', ' ')}</span></div>
                   <p className="detail-summary">{contextGuardDecision}</p>
-                  <p className={`approval-state ${selectedTrace?.approval_required ?? queryResult?.approval_required ? 'approval-needed' : 'approval-clear'}`}>{(selectedTrace?.approval_required ?? queryResult?.approval_required) ? 'Awaiting Approval · Human review required' : 'No approval required by this evaluation'}</p>
+                  <p className={`approval-state ${(selectedTrace?.approval_required ?? queryResult?.approval_required) ? 'approval-needed' : 'approval-clear'}`}>{(selectedTrace?.approval_required ?? queryResult?.approval_required) ? 'Awaiting Approval · Human review required' : 'No approval required by this evaluation'}</p>
                   {contextGuardExplanations.length === 0 ? <p className="empty-state">No per-action explanations were returned.</p> : <div className="guard-explanations">{contextGuardExplanations.map((item, index) => <div className="guard-explanation" key={`${item.action}-${index}`}><span className={`risk-dot risk-dot-${item.classification.toLowerCase()}`} /><div><strong>{item.action.replace(/_/g, ' ')}</strong><p>{item.classification} · {item.reason}</p></div></div>)}</div>}
                   <p className="data-origin-note">Guard evaluates proposals only. This frontend cannot approve or execute external actions.</p>
                 </>}
@@ -635,12 +650,12 @@ export default function App() {
                 <div className="chart-axis"><span>0</span><span>{formatNumber(Math.max(comparisonValues.previousCount, comparisonValues.currentCount))} reports</span></div>
                 <div className="chart-row">
                   <div className="chart-label"><strong>Previous</strong><small>{String(comparisonValues.previousStart)} – {String(comparisonValues.previousEnd)}</small></div>
-                  <div className="bar-track"><div className="bar-fill bar-previous" style={{ width: `${Math.max(3, comparisonValues.previousCount / Math.max(1, comparisonValues.currentCount) * 100)}%` }} /></div>
+                  <div className="bar-track"><div className="bar-fill bar-previous" style={{ width: `${Math.max(3, comparisonValues.previousCount / Math.max(1, comparisonValues.previousCount, comparisonValues.currentCount) * 100)}%` }} /></div>
                   <strong className="bar-value">{formatNumber(comparisonValues.previousCount, 0)}</strong>
                 </div>
                 <div className="chart-row">
                   <div className="chart-label"><strong>Current</strong><small>{String(comparisonValues.currentStart)} – {String(comparisonValues.currentEnd)}</small></div>
-                  <div className="bar-track"><div className="bar-fill bar-current" style={{ width: `${Math.max(3, comparisonValues.currentCount / Math.max(1, comparisonValues.currentCount) * 100)}%` }} /></div>
+                  <div className="bar-track"><div className="bar-fill bar-current" style={{ width: `${Math.max(3, comparisonValues.currentCount / Math.max(1, comparisonValues.previousCount, comparisonValues.currentCount) * 100)}%` }} /></div>
                   <strong className="bar-value">{formatNumber(comparisonValues.currentCount, 0)}</strong>
                 </div>
                 <div className="chart-insight"><span>↗</span> Complaint reports changed by <strong>{formatNumber(numberValue(readEvidence(customerResult, 'complaint_count_change_pct')))}%</strong>; affected-unit rate moved from <strong>{formatNumber(comparisonValues.previousRate, 4)}%</strong> to <strong>{formatNumber(comparisonValues.currentRate, 4)}%</strong>.</div>
@@ -717,6 +732,15 @@ export default function App() {
             </>}
           </article>
         </section>
+
+        {workflowAudit && (
+          <section className="panel" aria-label="Latest workflow audit event">
+            <div className="section-heading"><div><p className="section-kicker">WORKFLOW EVENT</p><h2>Latest workflow audit</h2></div></div>
+            <p>Workflow {workflowAudit.workflow_id} · {workflowAudit.evidence_count} evidence items · Guard: {workflowAudit.decision}</p>
+            <p>Agents: {workflowAudit.agents.map((agent) => `${agent} (${workflowAudit.statuses[agent] ?? 'unknown'})`).join(', ')}</p>
+          </section>
+        )}
+        {workflowAuditError && <p className="inline-error">Workflow event unavailable: {workflowAuditError}. Persisted audit history remains separate.</p>}
 
         <section className="panel audit-panel" id="audit">
           <div className="section-heading">
