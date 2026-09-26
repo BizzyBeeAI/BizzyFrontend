@@ -65,12 +65,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null)
   const [auditRecord, setAuditRecord] = useState<AuditRecord | null>(null)
-  const { sales, inventory, health, alerts, reload } = useSalesInventory(selectedLanguage)
+  const { sales, inventory, finance, health, alerts, reload } = useSalesInventory(selectedLanguage)
 
   const dashboardMetrics = [
     { label: 'Business Health', value: valueWhenReady(health, (data) => `${data.score}/100`) },
     { label: 'Sales Trend (WoW)', value: valueWhenReady(sales, (view) => formatPct(view.revenueChangePct)) },
-    { label: 'Overdue Invoices', value: '6' },
+    {
+      label: 'Overdue Invoices',
+      value: valueWhenReady(finance, (view) =>
+        view.overdueInvoiceCount === null ? '—' : String(view.overdueInvoiceCount),
+      ),
+    },
     { label: 'Out of Stock', value: valueWhenReady(inventory, (view) => String(view.riskCounts.out_of_stock)) },
   ]
 
@@ -330,13 +335,16 @@ export default function App() {
 
       <section className="panel approval-actions">
         <h2>Approval Gate</h2>
-        <p>AMBER actions require authorised human approval before commitment.</p>
-        <div className="actions">
-          <button type="button">Approve Draft Action</button>
-          <button type="button" className="secondary">
-            Reject Draft Action
-          </button>
-        </div>
+        {!queryResult ? (
+          <p>Run a query to evaluate whether a proposed action requires approval.</p>
+        ) : queryResult.approval_required ? (
+          <p>
+            The Guard has paused this recommendation for authorised human review. This build records the draft only;
+            no business action has been committed.
+          </p>
+        ) : (
+          <p>The Guard found no approval requirement. No external business action was submitted.</p>
+        )}
       </section>
     </main>
   )

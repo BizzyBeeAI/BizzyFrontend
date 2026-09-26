@@ -6,12 +6,9 @@ export const apiRoutes = {
   query: `${API_BASE_URL}/query`,
   businessHealth: `${API_BASE_URL}/business-health`,
   salesSummary: `${API_BASE_URL}/sales/summary`,
-  customerOpportunities: `${API_BASE_URL}/customers/opportunities`,
-  financeHealth: `${API_BASE_URL}/finance/health`,
+  financeSummary: `${API_BASE_URL}/finance/summary`,
   inventoryStatus: `${API_BASE_URL}/inventory/status`,
   salesInventoryAlerts: `${API_BASE_URL}/sales-inventory/alerts`,
-  approveAction: (id: string) => `${API_BASE_URL}/actions/${id}/approve`,
-  rejectAction: (id: string) => `${API_BASE_URL}/actions/${id}/reject`,
   auditTrail: (workflowId: string) => `${API_BASE_URL}/audit/${workflowId}`,
 }
 
