@@ -14,26 +14,30 @@ export const apiRoutes = {
   auditTrail: (workflowId: string) => `${API_BASE_URL}/audit/${workflowId}`,
 }
 
-export async function queryBusiness(payload: QueryRequest): Promise<QueryResponse> {
-  const response = await fetch(apiRoutes.query, {
+export async function requestJson<T>(url: string, label: string, init?: RequestInit): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch (error) {
+    if (init?.signal?.aborted) throw error
+    throw new Error(`Couldn't reach the BizzyBee backend for ${label}. Make sure it is running on port 8000.`)
+  }
+
+  if (!response.ok) {
+    throw new Error(`The backend couldn't return ${label} (HTTP ${response.status}).`)
+  }
+
+  return response.json() as Promise<T>
+}
+
+export function queryBusiness(payload: QueryRequest): Promise<QueryResponse> {
+  return requestJson<QueryResponse>(apiRoutes.query, 'an answer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-
-  if (!response.ok) {
-    throw new Error('Unable to submit business query.')
-  }
-
-  return response.json()
 }
 
-export async function fetchBusinessHealth(): Promise<BusinessHealthResponse> {
-  const response = await fetch(apiRoutes.businessHealth)
-
-  if (!response.ok) {
-    throw new Error('Unable to fetch business health summary.')
-  }
-
-  return response.json()
+export function fetchBusinessHealth(): Promise<BusinessHealthResponse> {
+  return requestJson<BusinessHealthResponse>(apiRoutes.businessHealth, 'the business health summary')
 }
