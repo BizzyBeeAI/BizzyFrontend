@@ -104,6 +104,11 @@ function parseGuardExplanations(decision: string): GuardActionExplanation[] {
   })
 }
 
+function guardExplanationsFor(decision: string, record: AuditRecord | null): GuardActionExplanation[] {
+  const parsed = parseGuardExplanations(decision)
+  return parsed.length || !record ? parsed : record.guard.action_explanations
+}
+
 function auditConfirmsExecution(action: string, record: AuditRecord | null): boolean {
   if (!record) return false
   return record.executed_actions.some((item) => {
@@ -316,7 +321,7 @@ export default function App() {
   const contextSpecialists = selectedTrace?.specialist_results ?? queryResult?.specialist_results ?? []
   const contextAdvisor = selectedTrace?.advisor_result ?? queryResult?.advisor_result ?? null
   const contextGuardDecision = selectedTrace?.guard.decision ?? queryResult?.guard_decision ?? ''
-  const contextGuardExplanations = contextGuardDecision ? parseGuardExplanations(contextGuardDecision) : []
+  const contextGuardExplanations = contextGuardDecision ? guardExplanationsFor(contextGuardDecision, selectedTrace) : []
   const contextInvokedAgents = queryResult?.invoked_agents ?? selectedTrace?.invoked_agents ?? []
 
   const evidenceList = useMemo<EvidenceItem[]>(() => {
@@ -353,9 +358,9 @@ export default function App() {
   const recommendationsList = useMemo<Recommendation[]>(() => {
     if (!queryResult) return []
     const recs: Recommendation[] = []
-    const explanations = parseGuardExplanations(queryResult.guard_decision)
-    const allResults: AgentResponse[] = [queryResult.advisor_result]
     const matchingAudit = selectedTrace?.trace_id === queryResult.workflow_id ? selectedTrace : null
+    const explanations = guardExplanationsFor(queryResult.guard_decision, matchingAudit)
+    const allResults: AgentResponse[] = [queryResult.advisor_result]
     allResults.forEach((res) => {
       res.recommended_actions.forEach((act: RecommendedAction) => {
         const { action, references } = splitActionEvidence(act.type)
@@ -374,7 +379,9 @@ export default function App() {
     return recs
   }, [queryResult, selectedTrace])
 
-  const guardExplanations = queryResult ? parseGuardExplanations(queryResult.guard_decision) : []
+  const guardExplanations = queryResult
+    ? guardExplanationsFor(queryResult.guard_decision, selectedTrace?.trace_id === queryResult.workflow_id ? selectedTrace : null)
+    : []
   const guardStatus = queryResult ? guardState(queryResult.guard_decision) : 'not_evaluated'
   const businessMetrics = [
     {

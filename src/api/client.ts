@@ -1,5 +1,6 @@
 import type { AuditEvent, AuditHistoryResponse, AuditRecord, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
 import { accessToken } from '../auth'
+import { toAuditRecord, type StoredAuditEvent } from '../utils/audit'
 import { fetchJson } from './transport'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -58,6 +59,6 @@ export function fetchAuditHistory(limit = 20): Promise<AuditHistoryResponse> {
   return requestJson<AuditHistoryResponse>(`${apiRoutes.auditHistory}?limit=${encodeURIComponent(String(limit))}`, 'audit history')
 }
 
-export function fetchAuditTrace(traceId: string): Promise<AuditRecord> {
-  return requestJson<AuditRecord>(apiRoutes.auditTrace(traceId), 'the audit trace')
+export async function fetchAuditTrace(traceId: string): Promise<AuditRecord> {
+  return toAuditRecord(await requestJson<AuditRecord | StoredAuditEvent>(apiRoutes.auditTrace(traceId), 'the audit trace'))
 }

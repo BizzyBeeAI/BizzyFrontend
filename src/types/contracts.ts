@@ -79,6 +79,8 @@ export interface AuditAction {
   agent: string
   type: string
   risk_level: RiskLevel
+  reason?: string | null
+  policy?: 'allowed' | 'approval_required' | 'blocked'
   parameters?: JsonRecord
 }
 
