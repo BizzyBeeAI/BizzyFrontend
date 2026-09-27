@@ -11,6 +11,7 @@
     "test:contract": "node scripts/check-contract.mjs",
     "test:dashboard": "node --test scripts/hive.test.mjs",
     "test:finance": "node --test scripts/finance.test.mjs",
+    "test:transport": "node --test scripts/transport.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
