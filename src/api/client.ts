@@ -1,5 +1,6 @@
 import type { AuditEvent, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
 import { accessToken } from '../auth'
+import { fetchJson } from './transport'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 
@@ -20,23 +21,18 @@ export const apiRoutes = {
 }
 
 export async function requestJson<T>(url: string, label: string, init?: RequestInit): Promise<T> {
-  let response: Response
+  const timeout = AbortSignal.timeout(30000)
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
   try {
     const token = await accessToken()
     const headers = new Headers(init?.headers)
     if (token) headers.set('Authorization', `Bearer ${token}`)
-    const timeout = AbortSignal.timeout(30000)
-    response = await fetch(url, { ...init, headers, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout })
+    return await fetchJson<T>(url, label, { ...init, headers }, signal)
   } catch (error) {
     if (init?.signal?.aborted) throw error
     throw new Error(error instanceof Error ? error.message : `Couldn't reach the BizzyBee backend for ${label}.`)
   }
 
-  if (!response.ok) {
-    throw new Error(`The backend couldn't return ${label} (HTTP ${response.status}).`)
-  }
-
-  return response.json() as Promise<T>
 }
 
 export function queryBusiness(payload: QueryRequest): Promise<QueryResponse> {
