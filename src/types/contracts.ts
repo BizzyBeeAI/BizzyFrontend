@@ -74,6 +74,8 @@ export interface BusinessAlert {
 }
 
 export interface AuditAction {
+  action_id?: string
+  state?: 'pending' | 'approved' | 'rejected' | 'blocked' | 'read_only'
   agent: string
   type: string
   risk_level: RiskLevel

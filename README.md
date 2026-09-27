@@ -1,5 +1,7 @@
 # BizzyFrontend
 
+AWS deployment documentation is maintained in [BizzyBackend/docs/deployment](https://github.com/BizzyBeeAI/BizzyBackend/tree/main/docs/deployment). The pending delivery changes add Cognito PKCE login and owner-only approval controls; production builds fail closed without Cognito configuration. Use `.env.example` for public configuration only. `npm run test:contract` verifies the checked-in backend OpenAPI snapshot.
+
 Frontend scaffolding for **BizzyBee AI** MVP UI.
 
 ## Run locally

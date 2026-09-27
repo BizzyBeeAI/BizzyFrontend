@@ -7,6 +7,8 @@ import {
   queryBusiness,
 } from './api/client'
 import { AlertsPanel } from './components/AlertsPanel'
+import { FinancePanel } from './components/FinancePanel'
+import { ApprovalControls } from './components/ApprovalControls'
 import { InventoryPanel } from './components/InventoryPanel'
 import { SalesPanel } from './components/SalesPanel'
 import { useSalesInventory, valueWhenReady } from './hooks/useSalesInventory'
@@ -224,7 +226,7 @@ export default function App() {
         .then(setWorkflowAudit)
         .catch((err: unknown) => setWorkflowAuditError(err instanceof Error ? err.message : 'Workflow audit event unavailable'))
       void refreshAuditHistory()
-      await openAuditTrace(response.workflow_id)
+      void openAuditTrace(response.workflow_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to query business API')
       void refreshAuditHistory(true)
@@ -502,6 +504,7 @@ export default function App() {
             <InventoryPanel state={inventory} onRetry={reload} />
           </div>
         </div>
+        <FinancePanel />
 
         <section className="panel ask-panel" id="ask">
           <div className="section-heading">
@@ -613,7 +616,7 @@ export default function App() {
                   <p className="detail-summary">{contextGuardDecision}</p>
                   <p className={`approval-state ${(selectedTrace?.approval_required ?? queryResult?.approval_required) ? 'approval-needed' : 'approval-clear'}`}>{(selectedTrace?.approval_required ?? queryResult?.approval_required) ? 'Awaiting Approval · Human review required' : 'No approval required by this evaluation'}</p>
                   {contextGuardExplanations.length === 0 ? <p className="empty-state">No per-action explanations were returned.</p> : <div className="guard-explanations">{contextGuardExplanations.map((item, index) => <div className="guard-explanation" key={`${item.action}-${index}`}><span className={`risk-dot risk-dot-${item.classification.toLowerCase()}`} /><div><strong>{item.action.replace(/_/g, ' ')}</strong><p>{item.classification} · {item.reason}</p></div></div>)}</div>}
-                  <p className="data-origin-note">Guard evaluates proposals only. This frontend cannot approve or execute external actions.</p>
+                  <p className="data-origin-note">Guard evaluates proposals only. Approval controls may record authorised decisions; this frontend does not execute external business actions.</p>
                 </>}
               </div>}
 
@@ -738,6 +741,21 @@ export default function App() {
             <div className="section-heading"><div><p className="section-kicker">WORKFLOW EVENT</p><h2>Latest workflow audit</h2></div></div>
             <p>Workflow {workflowAudit.workflow_id} · {workflowAudit.evidence_count} evidence items · Guard: {workflowAudit.decision}</p>
             <p>Agents: {workflowAudit.agents.map((agent) => `${agent} (${workflowAudit.statuses[agent] ?? 'unknown'})`).join(', ')}</p>
+          </section>
+        )}
+        {workflowAudit && (
+          <section className="panel" aria-label="Workflow approval controls">
+            <h2>Approval gate</h2>
+            <p>Authorised decisions are recorded only. No external business action is executed.</p>
+            <ApprovalControls
+              key={workflowAudit.workflow_id}
+              event={workflowAudit}
+              reload={() => {
+                void fetchAuditEvent(workflowAudit.workflow_id)
+                  .then(setWorkflowAudit)
+                  .catch((err: unknown) => setWorkflowAuditError(err instanceof Error ? err.message : 'Workflow audit event unavailable'))
+              }}
+            />
           </section>
         )}
         {workflowAuditError && <p className="inline-error">Workflow event unavailable: {workflowAuditError}. Persisted audit history remains separate.</p>}
