@@ -93,3 +93,49 @@ export interface AuditEvent {
   evidence_count: number
   actions: AuditAction[]
 }
+// Persisted Audit history and trace contracts
+
+export type EvidenceItem = Evidence
+
+export interface GuardActionExplanation {
+  action: string
+  classification: RiskLevel | 'DENY'
+  reason: string
+}
+
+// Separate from the shared AuditAction interface.
+export interface PersistedAuditAction {
+  type: string
+  risk_level: RiskLevel
+  evidence_references: string[]
+  status: string
+  executed: boolean
+}
+
+export interface AuditRecord {
+  trace_id: string
+  workflow_id: string
+  timestamp: string
+  status: string
+  query: string
+  invoked_agents: string[]
+  agents: string[]
+  specialist_results: AgentResponse[]
+  advisor_result: AgentResponse | null
+  decision: string
+  guard: {
+    decision: string
+    approval_required: boolean
+    action_explanations: GuardActionExplanation[]
+  }
+  approval_required: boolean
+  proposed_actions: PersistedAuditAction[]
+  executed_actions: PersistedAuditAction[]
+  evidence_count: number
+  failure_type: string | null
+}
+
+export interface AuditHistoryResponse {
+  items: AuditRecord[]
+  count: number
+}

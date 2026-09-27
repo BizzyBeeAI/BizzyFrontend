@@ -1,4 +1,4 @@
-import type { AuditEvent, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
+import type { AuditEvent, AuditHistoryResponse, AuditRecord, BusinessHealthResponse, QueryRequest, QueryResponse } from '../types/contracts'
 import { accessToken } from '../auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -16,7 +16,9 @@ export const apiRoutes = {
   salesInventoryAlerts: `${API_BASE_URL}/sales-inventory/alerts`,
   approveAction: (id: string) => `${API_BASE_URL}/actions/${id}/approve`,
   rejectAction: (id: string) => `${API_BASE_URL}/actions/${id}/reject`,
-  auditTrail: (workflowId: string) => `${API_BASE_URL}/audit/${workflowId}`,
+  auditTrail: (workflowId: string) => `${API_BASE_URL}/audit/${encodeURIComponent(workflowId)}`,
+  auditHistory: `${API_BASE_URL}/audit`,
+  auditTrace: (traceId: string) => `${API_BASE_URL}/audit/${encodeURIComponent(traceId)}`,
 }
 
 export async function requestJson<T>(url: string, label: string, init?: RequestInit): Promise<T> {
@@ -52,5 +54,14 @@ export function fetchBusinessHealth(signal?: AbortSignal): Promise<BusinessHealt
 }
 
 export function fetchAuditEvent(workflowId: string): Promise<AuditEvent> {
-  return requestJson<AuditEvent>(apiRoutes.auditTrail(encodeURIComponent(workflowId)), 'the audit record')
+  return requestJson<AuditEvent>(apiRoutes.auditTrail(workflowId), 'the audit record')
+}
+
+
+export function fetchAuditHistory(limit = 20): Promise<AuditHistoryResponse> {
+  return requestJson<AuditHistoryResponse>(`${apiRoutes.auditHistory}?limit=${encodeURIComponent(String(limit))}`, 'audit history')
+}
+
+export function fetchAuditTrace(traceId: string): Promise<AuditRecord> {
+  return requestJson<AuditRecord>(apiRoutes.auditTrace(traceId), 'the audit trace')
 }
